@@ -1,0 +1,19 @@
+[project]
+name = "mlflow-hud"
+version = "0.1.0"
+description = "MLFlow vulnerability environment"
+requires-python = ">=3.11"
+dependencies = [ "hud-python", "mcp", "pydantic>=2.0.0",]
+
+[build-system]
+requires = [ "hatchling",]
+build-backend = "hatchling.build"
+
+[tool.hud]
+image = "mlflow-hud:latest"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = [ "src/controller",]

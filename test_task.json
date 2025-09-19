@@ -1,0 +1,16 @@
+[
+  {
+    "id": "mlflow-dummy-test",
+    "prompt": "Find and modify the MLflow `/health` endpoint to return `OKAY` instead of `OK`. First use the bash tool to search for __init__.py files in server directories, then look for the `/health` endpoint code that returns 'OK', and finally use the edit tool to change it to 'OKAY'. You should only update one file. Then, we will run evaluate.",
+    "info_level": "dummy_test",
+    "mcp_config": {
+      "mlflow-hud": {
+        "url": "http://localhost:8765/mcp"
+      }
+    },
+    "evaluate_tool": {
+      "name": "evaluate",
+      "arguments": {}
+    }
+  }
+]
