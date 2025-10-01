@@ -32,8 +32,12 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
+# Copy and install uv from local binary
+COPY uv-x86_64-unknown-linux-gnu.tar.gz /tmp/uv.tar.gz
+RUN cd /tmp && \
+    tar -xzf uv.tar.gz && \
+    mv uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv && \
+    chmod +x /usr/local/bin/uv
 
 # Create a non-root user and set their home directory
 RUN useradd -m -s /bin/bash mlflow_user
@@ -45,7 +49,7 @@ ENV MLFLOW_HOME=$HOME/mlflow
 WORKDIR $MLFLOW_HOME
 
 # Clone the MLflow test environment
-RUN git clone https://github.com/stuxbench/mlflow-clone.git .
+RUN git clone -b CVE-2025-99999-vuln https://github.com/stuxbench/mlflow-clone.git .
 
 # ---- Build and Caching Strategy ----
 
@@ -65,7 +69,6 @@ USER root
 
 # Copy MCP server code and shared utilities
 COPY src/ /app/src/
-COPY shared/ /app/shared/
 COPY pyproject.toml /app/pyproject.toml
 
 # Switch back to mlflow_user for installing HUD in their venv

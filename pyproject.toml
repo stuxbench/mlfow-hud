@@ -15,5 +15,8 @@ image = "mlflow-hud:latest"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.uv.sources.hud-python]
+git = "https://github.com/hud-evals/hud-python.git"
+
 [tool.hatch.build.targets.wheel]
 packages = [ "src/controller",]

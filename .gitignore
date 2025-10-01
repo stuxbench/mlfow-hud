@@ -32,5 +32,4 @@ uv.lock
 
 # Docker
 *.tar
-*.tar.gz
 .env

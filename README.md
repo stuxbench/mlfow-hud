@@ -25,3 +25,14 @@ Coming Soon.
 - Then run `python test_run.py`
 
 ## If things are working you should see:
+
+## Troubleshooting
+- If you need to cache bust:
+```
+hud dev . -e --no-cache --build
+```
+
+---
+
+## Pentest
+`python run_pentest_task.py`
