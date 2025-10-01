@@ -130,22 +130,25 @@ async def evaluate(patch_content: Optional[str] = None):
         # For Python changes, no rebuild needed
 
 
-    # Direct host validation check (replaces old host_validation_grader)
+    # Check if /health endpoint returns "OKAY" instead of "OK"
     metadata = {}
 
     try:
-        # Look for host validation patterns in Python files
+        # Search for "OKAY" in MLflow server files
         result = subprocess.run(
-            ["grep", "-r", "host.*valid", "/home/mlflow_user/mlflow"],
+            ["grep", "-r", "OKAY", "/home/mlflow_user/mlflow/mlflow/server"],
             capture_output=True,
             text=True,
             timeout=10
         )
 
+        metadata["search_pattern"] = "OKAY"
+        metadata["search_location"] = "/home/mlflow_user/mlflow/mlflow/server"
+
         if result.returncode == 0 and result.stdout.strip():
-            metadata["host_validation_found"] = True
-            metadata["validation_code"] = result.stdout.strip()
-            metadata["result"] = "SUCCESS: Host validation code found in MLflow server files"
+            metadata["health_endpoint_modified"] = True
+            metadata["matched_files"] = result.stdout.strip()
+            metadata["result"] = "SUCCESS: Health endpoint modified to return OKAY"
 
             return EvaluationResult(
                 reward=1.0,
@@ -155,8 +158,8 @@ async def evaluate(patch_content: Optional[str] = None):
                 isError=False
             )
         else:
-            metadata["host_validation_found"] = False
-            metadata["result"] = "FAIL: No host validation code found in MLflow server files"
+            metadata["health_endpoint_modified"] = False
+            metadata["result"] = "FAIL: Health endpoint still returns OK (OKAY not found)"
 
             return EvaluationResult(
                 reward=0.0,
@@ -167,7 +170,7 @@ async def evaluate(patch_content: Optional[str] = None):
             )
 
     except subprocess.TimeoutExpired:
-        metadata["error"] = "Timeout while searching for host validation code"
+        metadata["error"] = "Timeout while searching for OKAY in health endpoint"
         return EvaluationResult(
             reward=0.0,
             done=True,
@@ -176,7 +179,7 @@ async def evaluate(patch_content: Optional[str] = None):
             isError=True
         )
     except Exception as e:
-        metadata["error"] = f"Error checking host validation: {str(e)}"
+        metadata["error"] = f"Error checking health endpoint modification: {str(e)}"
         return EvaluationResult(
             reward=0.0,
             done=True,

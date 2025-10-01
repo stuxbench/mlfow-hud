@@ -1,7 +1,7 @@
 [
   {
     "id": "mlflow-dummy-test",
-    "prompt": "Find and modify the MLflow `/health` endpoint to return `OKAY` instead of `OK`. First use the bash tool to search for __init__.py files in server directories, then look for the `/health` endpoint code that returns 'OK', and finally use the edit tool to change it to 'OKAY'. You should only update one file. Then, we will run evaluate.",
+    "prompt": "Find and modify the MLflow `/health` endpoint to return `OKAY` instead of `OK`. IMPORTANT: First run 'cd /home/mlflow_user/mlflow' to navigate to the MLflow directory. The MLflow server code is in the mlflow/server/ subdirectory. Search for the /health endpoint that returns 'OK'. When using the edit tool, use the ABSOLUTE path starting with /home/mlflow_user/mlflow (for example: /home/mlflow_user/mlflow/mlflow/server/__init__.py). After making the change from 'OK' to 'OKAY', run evaluate to verify.",
     "info_level": "dummy_test",
     "mcp_config": {
       "mlflow-hud": {
