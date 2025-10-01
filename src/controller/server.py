@@ -11,8 +11,6 @@ from urllib.parse import urlparse
 # Ensure 'controller.server' resolves to this module when run via `-m src.controller.server`
 sys.modules.setdefault('controller.server', sys.modules[__name__])
 
-sys.path.insert(0, '/app')
-
 from hud.server import MCPServer
 from mcp.types import TextContent
 from hud.tools.types import EvaluationResult
@@ -20,6 +18,8 @@ from hud.tools.types import EvaluationResult
 # Use hud tools directly instead of shared
 from hud.tools.bash import BashTool
 from hud.tools.edit import EditTool
+
+sys.path.insert(0, '/app')
 
 # Enhanced logging for debugging MCP connection issues
 logging.basicConfig(
@@ -36,63 +36,64 @@ mcp = MCPServer(name="mlflow-host-validation")
 
 # Log MCP server configuration for debugging
 logger.info(f"MCP server created: {mcp.name}")
-bash_tool = BashTool(working_dir="/home/mlflow_user/mlflow")
-edit_tool = EditTool(base_dir="/home/mlflow_user/mlflow")
+bash_tool = BashTool()
+edit_tool = EditTool()
+mcp.add_tool(bash_tool)
+mcp.add_tool(edit_tool)
+
 
 # Log server initialization details
 logger.info("Initializing MCP server...")
 logger.info(f"Server name: {mcp.name}")
-logger.info(f"Bash tool working directory: {bash_tool.working_dir}")
-logger.info(f"Edit tool base directory: {edit_tool.base_dir}")
 
 
-@mcp.tool()
-async def bash(
-    command: str,
-    timeout: int = 30,
-    cwd: Optional[str] = None
-) -> Dict[str, Any]:
-    """Execute bash commands for testing and exploration."""
-    logging.info(f"BASH TOOL CALLED: {command}")
-    result = await bash_tool(command=command, timeout=timeout, cwd=cwd)
-    logging.info(f"BASH RESULT: {result}")
-    return result
+# @mcp.tool()
+# async def bash(
+#     command: str,
+#     timeout: int = 30,
+#     cwd: Optional[str] = None
+# ) -> Dict[str, Any]:
+#     """Execute bash commands for testing and exploration."""
+#     logging.info(f"BASH TOOL CALLED: {command}")
+#     result = await bash_tool(command=command, timeout=timeout, cwd=cwd)
+#     logging.info(f"BASH RESULT: {result}")
+#     return result
 
-@mcp.tool()
-async def edit(
-    command: str,
-    path: str,
-    old_str: Optional[str] = None,
-    new_str: Optional[str] = None,
-    file_text: Optional[str] = None,
-    view_range: Optional[list] = None
-) -> Dict[str, Any]:
-    """Edit or view files for vulnerability patching.
+# @mcp.tool()
+# async def edit(
+#     command: str,
+#     path: str,
+#     old_str: Optional[str] = None,
+#     new_str: Optional[str] = None,
+#     file_text: Optional[str] = None,
+#     view_range: Optional[list] = None
+# ) -> Dict[str, Any]:
+#     """Edit or view files for vulnerability patching.
     
-    IMPORTANT: The 'command' parameter must be one of these exact strings:
-    - 'view': View file contents
-    - 'create': Create a new file
-    - 'str_replace': Replace a string in a file
+#     IMPORTANT: The 'command' parameter must be one of these exact strings:
+#     - 'view': View file contents
+#     - 'create': Create a new file
+#     - 'str_replace': Replace a string in a file
     
-    For str_replace:
-    - Provide old_str (exact string to find) and new_str (replacement)
-    - Example: command='str_replace', path='cmd/auth-handler.go', 
-              old_str='return cred, owner, ErrNone', 
-              new_str='return cred, owner, s3Err'
+#     For str_replace:
+#     - Provide old_str (exact string to find) and new_str (replacement)
+#     - Example: command='str_replace', path='cmd/auth-handler.go', 
+#               old_str='return cred, owner, ErrNone', 
+#               new_str='return cred, owner, s3Err'
     
-    DO NOT use sed syntax or other command formats!
-    """
-    logging.info(f"EDIT TOOL CALLED: command={command}, path={path}")
-    result = await edit_tool(
-        command=command,
-        path=path,
-        old_str=old_str,
-        new_str=new_str,
-        file_text=file_text,
-        view_range=view_range
-    )
-    logging.info(f"EDIT RESULT: {result}")
-    return result
+#     DO NOT use sed syntax or other command formats!
+#     """
+#     logging.info(f"EDIT TOOL CALLED: command={command}, path={path}")
+#     result = await edit_tool(
+#         command=command,
+#         path=path,
+#         old_str=old_str,
+#         new_str=new_str,
+#         file_text=file_text,
+#         view_range=view_range
+#     )
+#     logging.info(f"EDIT RESULT: {result}")
+#     return result
 
 @mcp.tool()
 async def evaluate(patch_content: Optional[str] = None):

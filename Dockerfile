@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set Python to be unbuffered, which is useful for seeing logs in Docker
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies as the root user.
+# Install system dependencies (Python 3.12 is default in Ubuntu 24.04)
 RUN apt-get update && apt-get install -y \
     make \
     build-essential \
@@ -27,8 +27,6 @@ RUN apt-get update && apt-get install -y \
     liblzma-dev \
     git \
     sudo \
-    python3 \
-    python3-pip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -53,9 +51,9 @@ RUN git clone -b CVE-2025-99999-vuln https://github.com/stuxbench/mlflow-clone.g
 
 # ---- Build and Caching Strategy ----
 
-# 1. Create a virtual environment with uv using system Python.
+# 1. Create a virtual environment with uv using Python 3 (3.12 in Ubuntu 24.04).
 #    This avoids uv downloading Python and requiring network access.
-RUN uv venv --python python3
+RUN uv venv --python python3.12
 ENV PATH="$MLFLOW_HOME/.venv/bin:$PATH"
 
 # 2. Install all dependencies from pyproject.toml.
@@ -77,6 +75,7 @@ WORKDIR $MLFLOW_HOME
 
 # Install Python dependencies for HUD in the mlflow user's venv
 RUN uv pip install --no-cache -e /app
+RUN uv pip install --no-cache-dir git+https://github.com/hud-evals/hud-python.git@fix-hud-server-imports
 
 # Expose the default MLflow port (5000)
 EXPOSE 5000
