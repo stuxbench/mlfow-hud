@@ -11,6 +11,14 @@
     "evaluate_tool": {
       "name": "evaluate_cve_2025_99999",
       "arguments": {}
-    }
+    },
+    "integration_test_tool": [
+      {
+        "name": "checkout_branch",
+        "arguments": {
+          "branch": "CVE-2025-99999-golden"
+        }
+      }
+    ]
   }
 ]

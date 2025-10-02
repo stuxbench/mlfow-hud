@@ -1,0 +1,91 @@
+diff --git a/mlflow/server/__init__.py b/mlflow/server/__init__.py
+index 67d3f2523..e2c7e0133 100644
+--- a/mlflow/server/__init__.py
++++ b/mlflow/server/__init__.py
+@@ -1,5 +1,6 @@
+ import importlib
+ import importlib.metadata
++import ipaddress
+ import os
+ import shlex
+ import sys
+@@ -7,7 +8,7 @@ import textwrap
+ import types
+ import warnings
+
+-from flask import Flask, Response, send_from_directory
++from flask import Flask, Response, request, send_from_directory
+ from packaging.version import Version
+
+ from mlflow.environment_variables import _MLFLOW_SGI_NAME, MLFLOW_FLASK_SERVER_SECRET_KEY
+@@ -60,9 +61,72 @@ if os.getenv(PROMETHEUS_EXPORTER_ENV_VAR):
+     activate_prometheus_exporter(app)
+
+
++def _validate_host_header():
++    """
++    Validate the Host header to prevent host header injection attacks.
++
++    Returns:
++        tuple: (is_valid, error_message) where is_valid is a boolean
++               and error_message is None if valid, or an error message if invalid
++    """
++    # Get the Host header from the request
++    host_header = request.headers.get('Host', '').lower().strip()
++
++    if not host_header:
++        return False, "Missing Host header"
++
++    # Remove port number if present (e.g., "localhost:5000" -> "localhost")
++    if ':' in host_header:
++        host_only = host_header.split(':')[0]
++    else:
++        host_only = host_header
++
++    # Define allowed hosts - these should match the server's binding configuration
++    allowed_hosts = {
++        'localhost',
++        '127.0.0.1',
++        '::1',  # IPv6 localhost
++        '0.0.0.0',  # Allow binding to all interfaces
++    }
++
++    # Also allow the actual server host if it's configured
++    # This helps with cases where the server is bound to a specific hostname
++    try:
++        # Get the server's configured host from environment or defaults
++        server_host = os.environ.get('MLFLOW_HOST', '127.0.0.1').lower().strip()
++        if server_host and server_host not in allowed_hosts:
++            allowed_hosts.add(server_host)
++    except Exception:
++        # If we can't determine the server host, continue with defaults
++        pass
++
++    # Check if the host is in our allowed list
++    if host_only in allowed_hosts:
++        return True, None
++
++    # Additional validation: check if it's a valid IP address format
++    try:
++        ipaddress.ip_address(host_only)
++        # If it's a valid IP, check if it's a private/local address
++        ip_obj = ipaddress.ip_address(host_only)
++        if ip_obj.is_private or ip_obj.is_loopback:
++            return True, None
++    except (ValueError, NameError):
++        # Not a valid IP address, but might still be a valid hostname
++        # NameError would occur if ipaddress module is not available
++        pass
++
++    return False, f"Invalid Host header: {host_header}"
++
++
+ # Provide a health check endpoint to ensure the application is responsive
+ @app.route("/health")
+ def health():
++    # Validate Host header to prevent host header injection attacks
++    is_valid, error_message = _validate_host_header()
++    if not is_valid:
++        return error_message, 400
++
+     return "OK", 200

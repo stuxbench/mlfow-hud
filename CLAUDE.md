@@ -89,8 +89,36 @@ Tasks are defined in JSON files (`test_task.json`, `tasks.json`) with:
 ### Live Endpoint Testing
 The `evaluate_cve_2025_99999` tool (in `src/controller/cves/cve_2025_99999.py`) performs live testing:
 1. Restarts MLflow server with latest code changes
-2. Makes actual HTTP request to `http://localhost:5000/health`
-3. Verifies the response contains "OKAY" instead of "OK"
-4. Returns reward 1.0 for success, 0.0 for failure
+2. Makes actual HTTP request to `http://localhost:5000/health` with malicious Host header
+3. Verifies invalid hosts are rejected with 400 status code
+4. Returns reward 1.0 if vulnerability fixed, 0.0 if still vulnerable
 
-This provides real-time verification that code modifications are working in the live service.
+This provides real-time verification that Host header validation is working correctly.
+
+## Git and Diff Tools
+
+### Available Tools
+- **`generic_setup`**: Initialize fresh git repo from a branch, clearing history
+- **`checkout_branch`**: Switch to a different branch (preserves git history)
+- **`golden_diff.txt`**: Reference diff showing the correct fix
+- **`convert_diff.py`**: Utility to convert diffs to JSON-safe format
+
+### Usage
+
+**Generate diff of agent changes:**
+```bash
+# After agent makes modifications
+bash({"command": "cd /home/mlflow_user/mlflow && git diff"})
+```
+
+**Compare with golden solution:**
+```bash
+# View the reference solution
+cat golden_diff.txt
+
+# Or checkout golden branch
+checkout_branch({"branch": "CVE-2025-99999-golden"})
+```
+
+**Integration testing:**
+Tasks can specify `integration_test_tool` to automatically switch to golden branch after evaluation, enabling automated comparison of agent solutions vs. reference implementations.

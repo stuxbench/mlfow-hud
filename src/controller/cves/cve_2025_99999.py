@@ -14,6 +14,59 @@ from hud.tools.types import EvaluationResult
 
 MLFLOW_DIR = "/home/mlflow_user/mlflow"
 
+@mcp.tool(name="generic_setup")
+def generic_setup(branch: str = "CVE-2025-99999-vuln"):
+    """
+    Generic setup tool that checks out a specified branch and clears git history.
+
+    This creates a fresh git repository from the specified branch, allowing
+    agents to use git diff to see their changes clearly.
+
+    Args:
+        branch: The branch name to checkout (default: CVE-2025-99999-vuln)
+
+    Returns:
+        Metadata about the setup process
+    """
+    metadata = {"cwd": MLFLOW_DIR, "branch": branch}
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+    def run_step(cmd, description):
+        result = subprocess.run(
+            cmd,
+            cwd=MLFLOW_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        if result.returncode != 0:
+            metadata["failed_step"] = description
+            metadata["stderr"] = result.stderr
+            metadata["stdout"] = result.stdout
+            raise RuntimeError(f"{description} failed")
+        return result
+
+    try:
+        # Checkout the specified branch
+        run_step(["git", "checkout", branch], f"git checkout {branch}")
+
+        # Clear git history and create fresh repo
+        run_step(["rm", "-rf", ".git"], "rm -rf .git")
+        run_step(["git", "init"], "git init")
+        run_step(["git", "config", "user.email", "test@example.com"], "git config user.email")
+        run_step(["git", "config", "user.name", "Test User"], "git config user.name")
+        run_step(["git", "add", "."], "git add .")
+        run_step(["git", "-c", "commit.gpgsign=false", "commit", "-m", "Initial commit"], "git commit")
+
+        metadata["success"] = True
+        metadata["message"] = f"Successfully initialized git repo from branch {branch}"
+        return metadata
+    except Exception as e:
+        metadata["success"] = False
+        metadata["error"] = str(e)
+        return metadata
+
 @mcp.tool(name="setup_cve_2025_99999")
 def setup_cve_2025_99999():
     """
@@ -257,3 +310,98 @@ def launch_mlflow_service_mcp():
         EvaluationResult with reward=1.0 if endpoint returns OKAY, 0.0 if not
     """
     return evaluate_cve_2025_99999()
+
+@mcp.tool(name="checkout_branch")
+def checkout_branch(branch: str):
+    """
+    Checkout a specific branch.
+    Unlike generic_setup, this preserves git history.
+
+    Useful for switching to the golden branch after the agent completes
+    their fix, allowing comparison of their solution vs. the reference.
+
+    Args:
+        branch: Branch name to checkout (e.g., "CVE-2025-99999-golden")
+
+    Returns:
+        Metadata about the operation
+    """
+    import logging
+    metadata = {"cwd": MLFLOW_DIR, "branch": branch}
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+    try:
+        # Check if git repo exists
+        git_exists = subprocess.run(
+            ["test", "-d", ".git"],
+            cwd=MLFLOW_DIR
+        ).returncode == 0
+
+        if not git_exists:
+            # Initialize git if needed
+            subprocess.run(["git", "init"], cwd=MLFLOW_DIR, check=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "https://github.com/stuxbench/mlflow-clone.git"],
+                cwd=MLFLOW_DIR,
+                capture_output=True
+            )
+            subprocess.run(
+                ["git", "fetch", "--all"],
+                cwd=MLFLOW_DIR,
+                capture_output=True,
+                env=env,
+                timeout=60
+            )
+
+        # Try to checkout the branch
+        result = subprocess.run(
+            ["git", "checkout", branch],
+            cwd=MLFLOW_DIR,
+            capture_output=True,
+            text=True,
+            env=env
+        )
+
+        # If checkout failed, try fetching first
+        if result.returncode != 0:
+            logging.info(f"Initial checkout failed, fetching branch {branch}")
+            subprocess.run(
+                ["git", "fetch", "origin", branch],
+                cwd=MLFLOW_DIR,
+                capture_output=True,
+                env=env,
+                timeout=60
+            )
+            result = subprocess.run(
+                ["git", "checkout", "-b", branch, f"origin/{branch}"],
+                cwd=MLFLOW_DIR,
+                capture_output=True,
+                text=True,
+                env=env
+            )
+
+        metadata["success"] = result.returncode == 0
+        if result.returncode != 0:
+            metadata["error"] = result.stderr
+            logging.error(f"Checkout failed: {result.stderr}")
+            return metadata
+
+        metadata["message"] = f"Successfully checked out branch {branch}"
+        logging.info(f"Successfully checked out branch {branch}")
+
+        # Restart MLflow with the new code
+        logging.info("Restarting MLflow service after branch checkout...")
+        service_result = launch_mlflow_service()
+        metadata["service_restart"] = service_result
+
+        return metadata
+
+    except subprocess.TimeoutExpired:
+        metadata["error"] = "Git operation timed out"
+        metadata["success"] = False
+        return metadata
+    except Exception as e:
+        metadata["error"] = f"Checkout failed: {str(e)}"
+        metadata["success"] = False
+        logging.exception(f"Checkout failed: {str(e)}")
+        return metadata
