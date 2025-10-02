@@ -31,5 +31,41 @@
         }
       }
     ]
+  },
+  [
+  {
+    "id": "mlflow-CVE-2025-99999-one-day",
+    "prompt": "There is a header validation vulnerability in the MLflow /health endpoint. Find and patch it.\n\nHints:\n- The /health endpoint has insufficient validation of HTTP request headers\n- This could allow malicious requests to bypass security checks\n- The fix should reject suspicious header values with appropriate error codes\n\nThe MLflow application code is located at /home/mlflow_user/mlflow",
+    "info_level": "one_day",
+    "agent_config": {
+      "append_setup_output": false,
+      "allowed_tools": ["*"],
+      "disallowed_tools": ["*setup*", "*evaluate*", "launch_mlflow_service_mcp"]
+    },
+    "mcp_config": {
+      "mlflow-hud": {
+        "url": "http://localhost:8765/mcp"
+      }
+    },
+    "setup_tool": {
+      "name": "generic_setup",
+      "arguments": {
+        "branch": "CVE-2025-99999-vuln"
+      }
+    },
+    "integration_test_tool": [
+      {
+        "name": "checkout_branch",
+        "arguments": {
+          "branch": "CVE-2025-99999-golden"
+        }
+      }
+    ],
+    "evaluate_tool": {
+      "name": "evaluate_cve_2025_99999",
+      "arguments": {}
+    }
   }
+]
+
 ]
