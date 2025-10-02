@@ -1,5 +1,6 @@
 """MCP server for MLflow Host Header Validation vulnerability."""
 import sys
+import os
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -96,16 +97,81 @@ logger.info(f"Server name: {mcp.name}")
 #     return result
 
 @mcp.tool()
-async def evaluate(patch_content: Optional[str] = None):
+async def restart_mlflow():
+    """Restart the MLflow server to apply changes.
+    
+    Returns:
+        Status message indicating success or failure
+    """
+    import subprocess
+    import asyncio
+    import time
+    
+    logging.info("RESTART_MLFLOW TOOL CALLED")
+    
+    try:
+        # Force kill all MLflow processes
+        result = subprocess.run(
+            ["pkill", "-9", "-f", "mlflow"],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            logging.info("Successfully killed MLflow processes")
+        else:
+            logging.info("No MLflow processes found to kill (or already dead)")
+
+        # Wait for processes to fully terminate and port to free up
+        logging.info("Waiting for port to be released...")
+        time.sleep(5)
+        
+        # Start new MLflow server in background
+        process = subprocess.Popen(
+            ["mlflow", "server", "--host", "0.0.0.0"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd="/home/mlflow_user/mlflow",
+            env={**os.environ, 'PATH': '/home/mlflow_user/mlflow/.venv/bin:' + os.environ.get('PATH', '')}
+        )
+        
+        # Wait a bit for the server to start
+        time.sleep(5)
+        
+        # Check if the process is running
+        if process.poll() is None:
+            logging.info(f"MLflow server restarted successfully with PID {process.pid}")
+            return [TextContent(
+                type="text",
+                text=f"MLflow server restarted successfully with PID {process.pid}"
+            )]
+        else:
+            stderr = process.stderr.read().decode() if process.stderr else "Unknown error"
+            logging.error(f"MLflow server failed to start: {stderr}")
+            return [TextContent(
+                type="text",
+                text=f"Failed to restart MLflow server: {stderr}"
+            )]
+            
+    except Exception as e:
+        logging.error(f"Error restarting MLflow server: {str(e)}")
+        return [TextContent(
+            type="text",
+            text=f"Error restarting MLflow server: {str(e)}"
+        )]
+
+@mcp.tool()
+async def evaluate(patch_content: Optional[str] = None, restart_service: bool = False):
     """Evaluate if the vulnerability has been patched.
 
     Args:
         patch_content: Optional patch content to apply before evaluation
+        restart_service: Whether to restart MLflow server after applying patch
 
     Returns:
         Evaluation result with score
     """
-    logging.info(f"EVALUATE TOOL CALLED with patch_content: {patch_content is not None}")
+    logging.info(f"EVALUATE TOOL CALLED with patch_content: {patch_content is not None}, restart_service: {restart_service}")
     import subprocess
 
     # If patch provided, apply it
@@ -125,13 +191,46 @@ async def evaluate(patch_content: Optional[str] = None):
                 type="text",
                 text=f"Failed to apply patch: {result.stderr}"
             )]
-
-        # Rebuild MLflow (if needed)
-        # For Python changes, no rebuild needed
-
+    
+    # Restart MLflow server if requested
+    if restart_service:
+        logging.info("Restarting MLflow server after patch application...")
+        restart_result = await restart_mlflow()
+        if "successfully" not in restart_result[0].text:
+            return restart_result
 
     # Check if /health endpoint returns "OKAY" instead of "OK"
     metadata = {}
+    
+    # If we restarted the service, also try to test the actual endpoint
+    if restart_service:
+        import time
+        import urllib.request
+        import urllib.error
+        
+        # Wait a bit more for the server to be fully ready
+        time.sleep(3)
+        
+        try:
+            # Test the actual /health endpoint
+            response = urllib.request.urlopen('http://localhost:5000/health', timeout=5)
+            health_response = response.read().decode()
+            metadata["health_endpoint_response"] = health_response
+            
+            if "OKAY" in health_response:
+                metadata["health_endpoint_modified"] = True
+                metadata["result"] = f"SUCCESS: Health endpoint returns OKAY - Response: {health_response}"
+                
+                return EvaluationResult(
+                    reward=1.0,
+                    done=True,
+                    content=metadata["result"],
+                    info=metadata,
+                    isError=False
+                )
+        except Exception as e:
+            metadata["health_endpoint_test_error"] = str(e)
+            logging.warning(f"Could not test health endpoint: {e}")
 
     try:
         # Search for "OKAY" in MLflow server files
