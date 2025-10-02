@@ -74,8 +74,17 @@ USER mlflow_user
 WORKDIR $MLFLOW_HOME
 
 # Install Python dependencies for HUD in the mlflow user's venv
-RUN uv pip install --no-cache -e /app
+# Non-editable install so source files can be safely deleted
+RUN uv pip install --no-cache /app
 RUN uv pip install --no-cache-dir git+https://github.com/hud-evals/hud-python.git@fix-hud-server-imports
+
+# Compile ALL grading/server code to bytecode and remove source files
+USER root
+RUN python3 -m compileall -b /app/src/controller/
+RUN find /app/src/controller/cves/ -name "*.py" -delete
+RUN find /app/src/controller/ -name "server.py" -delete
+RUN find /app/src/controller/ -name "env.py" -delete
+USER mlflow_user
 
 # Expose the default MLflow port (5000)
 EXPOSE 5000

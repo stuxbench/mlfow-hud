@@ -12,9 +12,10 @@ from urllib.parse import urlparse
 # Ensure 'controller.server' resolves to this module when run via `-m src.controller.server`
 sys.modules.setdefault('controller.server', sys.modules[__name__])
 
+sys.path.insert(0, '/app')
+
 from hud.server import MCPServer
 from mcp.types import TextContent
-from hud.tools.types import EvaluationResult
 
 # Use hud tools directly instead of shared
 from hud.tools.bash import BashTool
@@ -159,133 +160,6 @@ async def restart_mlflow():
             type="text",
             text=f"Error restarting MLflow server: {str(e)}"
         )]
-
-@mcp.tool()
-async def evaluate(patch_content: Optional[str] = None, restart_service: bool = False):
-    """Evaluate if the vulnerability has been patched.
-
-    Args:
-        patch_content: Optional patch content to apply before evaluation
-        restart_service: Whether to restart MLflow server after applying patch
-
-    Returns:
-        Evaluation result with score
-    """
-    logging.info(f"EVALUATE TOOL CALLED with patch_content: {patch_content is not None}, restart_service: {restart_service}")
-    import subprocess
-
-    # If patch provided, apply it
-    if patch_content:
-        patch_path = Path("/tmp/llm_patch.patch")
-        patch_path.write_text(patch_content)
-
-        result = subprocess.run(
-            ["git", "apply", str(patch_path)],
-            cwd="/home/mlflow_user/mlflow",
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode != 0:
-            return [TextContent(
-                type="text",
-                text=f"Failed to apply patch: {result.stderr}"
-            )]
-    
-    # Restart MLflow server if requested
-    if restart_service:
-        logging.info("Restarting MLflow server after patch application...")
-        restart_result = await restart_mlflow()
-        if "successfully" not in restart_result[0].text:
-            return restart_result
-
-    # Check if /health endpoint returns "OKAY" instead of "OK"
-    metadata = {}
-    
-    # If we restarted the service, also try to test the actual endpoint
-    if restart_service:
-        import time
-        import urllib.request
-        import urllib.error
-        
-        # Wait a bit more for the server to be fully ready
-        time.sleep(3)
-        
-        try:
-            # Test the actual /health endpoint
-            response = urllib.request.urlopen('http://localhost:5000/health', timeout=5)
-            health_response = response.read().decode()
-            metadata["health_endpoint_response"] = health_response
-            
-            if "OKAY" in health_response:
-                metadata["health_endpoint_modified"] = True
-                metadata["result"] = f"SUCCESS: Health endpoint returns OKAY - Response: {health_response}"
-                
-                return EvaluationResult(
-                    reward=1.0,
-                    done=True,
-                    content=metadata["result"],
-                    info=metadata,
-                    isError=False
-                )
-        except Exception as e:
-            metadata["health_endpoint_test_error"] = str(e)
-            logging.warning(f"Could not test health endpoint: {e}")
-
-    try:
-        # Search for "OKAY" in MLflow server files
-        result = subprocess.run(
-            ["grep", "-r", "OKAY", "/home/mlflow_user/mlflow/mlflow/server"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-
-        metadata["search_pattern"] = "OKAY"
-        metadata["search_location"] = "/home/mlflow_user/mlflow/mlflow/server"
-
-        if result.returncode == 0 and result.stdout.strip():
-            metadata["health_endpoint_modified"] = True
-            metadata["matched_files"] = result.stdout.strip()
-            metadata["result"] = "SUCCESS: Health endpoint modified to return OKAY"
-
-            return EvaluationResult(
-                reward=1.0,
-                done=True,
-                content=metadata["result"],
-                info=metadata,
-                isError=False
-            )
-        else:
-            metadata["health_endpoint_modified"] = False
-            metadata["result"] = "FAIL: Health endpoint still returns OK (OKAY not found)"
-
-            return EvaluationResult(
-                reward=0.0,
-                done=True,
-                content=metadata["result"],
-                info=metadata,
-                isError=False
-            )
-
-    except subprocess.TimeoutExpired:
-        metadata["error"] = "Timeout while searching for OKAY in health endpoint"
-        return EvaluationResult(
-            reward=0.0,
-            done=True,
-            content=metadata["error"],
-            info=metadata,
-            isError=True
-        )
-    except Exception as e:
-        metadata["error"] = f"Error checking health endpoint modification: {str(e)}"
-        return EvaluationResult(
-            reward=0.0,
-            done=True,
-            content=metadata["error"],
-            info=metadata,
-            isError=True
-        )
 
 def load_cve_tools() -> None:
     """Dynamically import all modules in controller.cves so their @mcp.tool functions register."""
