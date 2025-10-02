@@ -18,16 +18,24 @@ hud dev . -e --no-cache --build     # Cache-busting rebuild
 ```
 
 ### Running Tests
+All test scripts now reference tasks.json as the single source of truth:
+
 ```bash
 # Run full-info test (agent gets complete vulnerability details)
-python test_run.py                  # Runs test_task.json with claude-opus-4-1
+python test_run.py                  # Runs tasks[0] - full vulnerability details
+python test_full_info.py            # Same as above (explicit naming)
+
+# Run one-day test (agent gets vulnerability location and type, must find exact fix)
+python test_one_day.py              # Runs tasks[1] - partial vulnerability info
 
 # Run zero-day test (agent must discover vulnerability themselves)
-.venv/bin/hud-python eval test_zero_day.json claude --model claude-opus-4-1-20250805
+python test_zero_day.py             # Runs tasks[2] - no hints
 
 # Run pentest task for vulnerability testing
-python run_pentest_task.py           # Runs full vulnerability assessment from tasks.json
+python run_pentest_task.py          # Runs tasks[0] (legacy compatibility)
 ```
+
+All scripts extract the appropriate task from tasks.json and write to single_task.json temporarily.
 
 ### HUD Evaluation Command
 ```bash
@@ -66,16 +74,17 @@ This is an MLflow vulnerability testing environment using the Model Context Prot
 
 ### Task Configuration
 
-Tasks are defined in JSON files with varying difficulty levels:
+All tasks are defined in `tasks.json` as a single source of truth. Test scripts extract individual tasks to `single_task.json` temporarily.
 
-**Task Difficulty Levels:**
-- **full_info** (`test_task.json`): Agent receives complete vulnerability details including location, issue description, and required fix
-- **zero_day** (`test_zero_day.json`): Agent must discover and patch vulnerabilities with no prior knowledge or hints
+**Task Difficulty Levels (in tasks.json):**
+- **tasks[0] - full_info**: Agent receives complete vulnerability details including location, issue description, and required fix
+- **tasks[1] - one_day**: Agent receives vulnerability location and type, but must find exact file and implementation details
+- **tasks[2] - zero_day**: Agent must discover and patch vulnerabilities with no prior knowledge or hints
 
 **Common Task Fields:**
 - `id`: Task identifier
 - `prompt`: Instructions for the AI agent
-- `info_level`: Difficulty level (full_info, zero_day)
+- `info_level`: Difficulty level (full_info, one_day, zero_day)
 - `mcp_config`: Server URL configuration
 - `evaluate_tool`: Tool to assess success
 - `setup_tool`: Optional initialization (e.g., `generic_setup` for zero-day)
@@ -87,7 +96,8 @@ Tasks are defined in JSON files with varying difficulty levels:
 - MLflow code location: `/home/mlflow_user/mlflow`
 - MCP server module: `src/controller/server.py`
 - CVE tools package: `src/controller/cves/`
-- Test runners: `test_run.py`, `run_pentest_task.py`
+- Task definitions: `tasks.json` (single source of truth)
+- Test runners: `test_run.py`, `test_full_info.py`, `test_one_day.py`, `test_zero_day.py`, `run_pentest_task.py`
 
 ## Development Notes
 

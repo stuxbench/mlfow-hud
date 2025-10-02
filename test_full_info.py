@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the zero-day test task"""
+"""Run the full-info test task"""
 
 import json
 import subprocess
@@ -7,14 +7,14 @@ import sys
 
 with open("tasks.json") as f:
     tasks = json.load(f)
-    zero_day_task = tasks[2]  # Third task
+    full_info_task = tasks[0]  # First task
 
 with open("single_task.json", "w") as f:
-    json.dump([zero_day_task], f, indent=2)
+    json.dump([full_info_task], f, indent=2)
 
-print(f"Running task: {zero_day_task['id']}")
-print(f"Info level: {zero_day_task['info_level']}")
-print(f"Prompt: {zero_day_task['prompt']}\n")
+print(f"Running task: {full_info_task['id']}")
+print(f"Info level: {full_info_task['info_level']}")
+print(f"Prompt: {full_info_task['prompt']}\n")
 
 cmd = [
     ".venv/bin/hud-python", "eval", "single_task.json", "claude",

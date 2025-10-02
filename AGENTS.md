@@ -175,27 +175,37 @@ result = await edit_tool(
 
 ## Integration Points
 
-### Task Configuration (`test_task.json`)
+### Task Configuration (`tasks.json`)
 
-The system uses JSON-based task definitions that specify:
+The system uses JSON-based task definitions in `tasks.json` as a single source of truth. Each task specifies:
 - Task ID and prompt
-- Information level (e.g., "dummy_test")
+- Information level (full_info, one_day, zero_day)
 - MCP server configuration
 - Evaluation tool settings
+- Setup and integration test tools
 
-**Example Task**:
+**Example Task (tasks.json)**:
 ```json
 {
-  "id": "mlflow-dummy-test",
-  "prompt": "Find and modify the MLflow `/health` endpoint...",
+  "id": "mlflow-CVE-2025-99999-full-info",
+  "prompt": "Fix the Host header validation vulnerability...",
+  "info_level": "full_info",
+  "agent_config": {
+    "allowed_tools": ["*"],
+    "disallowed_tools": ["*setup*", "*evaluate*"]
+  },
   "mcp_config": {
     "mlflow-hud": {
       "url": "http://localhost:8765/mcp"
     }
   },
   "evaluate_tool": {
-    "name": "evaluate",
+    "name": "evaluate_cve_2025_99999",
     "arguments": {}
+  },
+  "setup_tool": {
+    "name": "generic_setup",
+    "arguments": {"branch": "CVE-2025-99999-vuln"}
   }
 }
 ```

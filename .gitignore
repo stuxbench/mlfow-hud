@@ -33,3 +33,6 @@ uv.lock
 # Docker
 *.tar
 .env
+
+# dump file
+single_task.json
