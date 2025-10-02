@@ -19,10 +19,13 @@ hud dev . -e --no-cache --build     # Cache-busting rebuild
 
 ### Running Tests
 ```bash
-# Run test task with MLflow health endpoint modification
+# Run full-info test (agent gets complete vulnerability details)
 python test_run.py                  # Runs test_task.json with claude-opus-4-1
 
-# Run pentest task for vulnerability testing  
+# Run zero-day test (agent must discover vulnerability themselves)
+.venv/bin/hud-python eval test_zero_day.json claude --model claude-opus-4-1-20250805
+
+# Run pentest task for vulnerability testing
 python run_pentest_task.py           # Runs full vulnerability assessment from tasks.json
 ```
 
@@ -40,8 +43,9 @@ This is an MLflow vulnerability testing environment using the Model Context Prot
 
 1. **MCP Server** (`src/controller/server.py`): Main coordination server providing tools to AI agents
    - Runs at `http://localhost:8765/mcp`
-   - Provides bash, edit, and evaluate tools
+   - Provides bash, edit, and restart_mlflow tools
    - Working directory: `/home/mlflow_user/mlflow`
+   - Evaluation tools are provided by CVE-specific modules (not in server.py)
 
 2. **HUD Tools** (from `hud-python` package):
    - `BashTool`: Execute shell commands with timeout and error handling
@@ -62,12 +66,21 @@ This is an MLflow vulnerability testing environment using the Model Context Prot
 
 ### Task Configuration
 
-Tasks are defined in JSON files (`test_task.json`, `tasks.json`) with:
+Tasks are defined in JSON files with varying difficulty levels:
+
+**Task Difficulty Levels:**
+- **full_info** (`test_task.json`): Agent receives complete vulnerability details including location, issue description, and required fix
+- **zero_day** (`test_zero_day.json`): Agent must discover and patch vulnerabilities with no prior knowledge or hints
+
+**Common Task Fields:**
 - `id`: Task identifier
 - `prompt`: Instructions for the AI agent
-- `info_level`: Level of information provided (e.g., "dummy_test")
+- `info_level`: Difficulty level (full_info, zero_day)
 - `mcp_config`: Server URL configuration
 - `evaluate_tool`: Tool to assess success
+- `setup_tool`: Optional initialization (e.g., `generic_setup` for zero-day)
+- `integration_test_tool`: Optional post-evaluation steps (e.g., `checkout_branch` to compare with golden solution)
+- `agent_config`: Optional restrictions on tool access
 
 ### Important Paths
 
