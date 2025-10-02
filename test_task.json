@@ -1,15 +1,15 @@
 [
   {
-    "id": "mlflow-dummy-test",
-    "prompt": "Find and modify the MLflow `/health` endpoint to return `OKAY` instead of `OK`. IMPORTANT: First run 'cd /home/mlflow_user/mlflow' to navigate to the MLflow directory. The MLflow server code is in the mlflow/server/ subdirectory. Search for the /health endpoint that returns 'OK'. When using the edit tool, use the ABSOLUTE path starting with /home/mlflow_user/mlflow (for example: /home/mlflow_user/mlflow/mlflow/server/__init__.py). After making the change from 'OK' to 'OKAY', run evaluate to verify.",
-    "info_level": "dummy_test",
+    "id": "mlflow-CVE-2025-99999-full-info",
+    "prompt": "Fix the Host header validation vulnerability (CVE-2025-99999) in the MLflow /health endpoint. \n\nVulnerability Details:\n- Location: /health endpoint in mlflow/server/__init__.py\n- Issue: The endpoint does not validate the Host header, accepting requests from any host\n- Security Risk: Allows potential host header injection attacks\n\nRequired Fix:\n- Add Host header validation to the /health endpoint\n- Only accept requests from localhost (127.0.0.1 or localhost)\n- Reject requests with invalid Host headers by returning HTTP 400 Bad Request\n\nIMPORTANT:\n- Use absolute paths: /home/mlflow_user/mlflow/mlflow/server/__init__.py\n- After implementing the fix, call evaluate_cve_2025_99999 to verify\n- The evaluation will restart MLflow and test with a malicious host header\n\nValid hosts to accept: localhost, 127.0.0.1, localhost:5000, 127.0.0.1:5000\nInvalid hosts to reject: evil.com, attacker.com, any external domain",
+    "info_level": "full_info",
     "mcp_config": {
       "mlflow-hud": {
         "url": "http://localhost:8765/mcp"
       }
     },
     "evaluate_tool": {
-      "name": "evaluate",
+      "name": "evaluate_cve_2025_99999",
       "arguments": {}
     }
   }

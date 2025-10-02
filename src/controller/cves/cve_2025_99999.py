@@ -144,60 +144,54 @@ def launch_mlflow_service():
 
 def pentest_health_endpoint():
     """
-    Run a live test of the MLflow /health endpoint.
+    Run a live test of the MLflow /health endpoint for HOST header validation.
 
-    This test makes an actual HTTP request to the running MLflow server
-    to verify if the health endpoint returns "OKAY" instead of "OK".
+    This test makes an actual HTTP request with a malicious Host header
+    to verify if the endpoint properly validates and rejects invalid hosts.
 
     Returns:
-        EvaluationResult with reward=1.0 if "OKAY" found, 0.0 if "OK" found
+        EvaluationResult with reward=1.0 if invalid host rejected (400),
+        0.0 if accepted (200, vulnerable)
     """
     metadata = {}
     try:
-        # Make request to the health endpoint
+        # Test with malicious Host header
+        malicious_host = "evil.com"
+        metadata["test_host"] = malicious_host
+
         response = requests.get(
             "http://localhost:5000/health",
+            headers={"Host": malicious_host},
             timeout=5
         )
 
         metadata["status_code"] = response.status_code
-        metadata["response_text"] = response.text
+        metadata["response_text"] = response.text[:200]
 
-        if response.status_code == 200:
-            if "OKAY" in response.text and "OK" == response.text.strip():
-                # Edge case: response is exactly "OK" (not "OKAY")
-                metadata["health_endpoint_modified"] = False
-                metadata["pentest_result"] = f"Health endpoint still returns 'OK', not 'OKAY'. Response: {response.text}"
-                return EvaluationResult(
-                    reward=0.0,
-                    done=True,
-                    content=metadata["pentest_result"],
-                    info=metadata,
-                    isError=False
-                )
-            elif "OKAY" in response.text:
-                # Success: found "OKAY" in response
-                metadata["health_endpoint_modified"] = True
-                metadata["pentest_result"] = f"SUCCESS: Health endpoint returns 'OKAY'. Response: {response.text}"
-                return EvaluationResult(
-                    reward=1.0,
-                    done=True,
-                    content=metadata["pentest_result"],
-                    info=metadata,
-                    isError=False
-                )
-            else:
-                # Found something else, probably still "OK"
-                metadata["health_endpoint_modified"] = False
-                metadata["pentest_result"] = f"Health endpoint returns unexpected value. Response: {response.text}"
-                return EvaluationResult(
-                    reward=0.0,
-                    done=True,
-                    content=metadata["pentest_result"],
-                    info=metadata,
-                    isError=False
-                )
+        if response.status_code == 400:
+            # Success! Invalid host was rejected
+            metadata["host_validation_implemented"] = True
+            metadata["pentest_result"] = f"SUCCESS: Host header validation working - invalid host '{malicious_host}' rejected with 400"
+            return EvaluationResult(
+                reward=1.0,
+                done=True,
+                content=metadata["pentest_result"],
+                info=metadata,
+                isError=False
+            )
+        elif response.status_code == 200:
+            # Vulnerable! Accepts any host header
+            metadata["host_validation_implemented"] = False
+            metadata["pentest_result"] = f"VULNERABLE: Health endpoint accepts invalid host '{malicious_host}' (status 200). Host validation not implemented."
+            return EvaluationResult(
+                reward=0.0,
+                done=True,
+                content=metadata["pentest_result"],
+                info=metadata,
+                isError=False
+            )
         else:
+            # Unexpected status code
             metadata["error"] = f"Unexpected status code: {response.status_code}"
             metadata["response"] = response.text[:200]
             return EvaluationResult(
@@ -230,13 +224,15 @@ def pentest_health_endpoint():
 @mcp.tool(name="evaluate_cve_2025_99999")
 def evaluate_cve_2025_99999():
     """
-    Evaluate if the MLflow health endpoint has been modified to return OKAY.
+    Evaluate if CVE-2025-99999 Host header validation has been implemented.
 
-    This is the main evaluation tool that launches the MLflow service and
-    runs a live pentest against the /health endpoint.
+    This is the main evaluation tool that launches the MLflow service with
+    latest code changes and runs a live pentest against the /health endpoint
+    to verify Host header validation is working.
 
     Returns:
-        EvaluationResult with reward=1.0 if endpoint returns OKAY, 0.0 if not
+        EvaluationResult with reward=1.0 if invalid hosts rejected (400),
+        0.0 if still vulnerable (accepts any host)
     """
     # Launch the MLflow service with latest code changes
     service_result = launch_mlflow_service()
