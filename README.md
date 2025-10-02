@@ -22,9 +22,7 @@ Coming Soon.
 
 - Replace the dummy API keys with your own.
 
-- Then run `python test_run.py`
-
-## If things are working you should see:
+- Then run `python test_full_info.py`
 
 ## Troubleshooting
 - If you need to cache bust:
