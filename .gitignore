@@ -36,3 +36,4 @@ uv.lock
 
 # dump file
 single_task.json
+hud.lock.yaml
