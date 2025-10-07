@@ -1,12 +1,10 @@
-"""Environment management for MinIO vulnerability testing."""
-import os
+"""Environment management for MLFlow vulnerability testing."""
 import sys
 import asyncio
 import logging
-from pathlib import Path
 
 # Add shared code to path
-sys.path.insert(0, '/app')
+sys.path.insert(0, '/donotaccess')
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -15,14 +13,9 @@ logging.basicConfig(
 )
 
 def setup_environment():
-    """Set up MinIO environment variables."""
-    os.environ['MINIO_ROOT_USER'] = 'admin'
-    os.environ['MINIO_ROOT_PASSWORD'] = 'password'
+    """Set up MLFlow environment."""
     
-    logging.info("Environment initialized for MinIO CVE-2020-11012")
-    logging.info(f"MinIO version: 2020.04.10")
-    logging.info(f"Vulnerability: CVE-2020-11012")
-    logging.info(f"Initial state: vulnerable branch")
+    logging.info("Environment initialized for MLFlow CVE-2025-99999")
 
 async def main():
     """Initialize the environment and keep it running."""
