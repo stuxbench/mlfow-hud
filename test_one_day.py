@@ -18,7 +18,8 @@ print(f"Prompt: {one_day_task['prompt']}\n")
 
 cmd = [
     ".venv/bin/hud-python", "eval", "single_task.json", "claude",
-    "--model", "claude-opus-4-1-20250805"
+    "--model", "claude-opus-4-1-20250805",
+    "--max-steps", "50"
 ]
 
 print(f"Executing: {' '.join(cmd)}\n")
