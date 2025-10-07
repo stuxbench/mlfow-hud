@@ -3,7 +3,7 @@ name = "mlflow-hud"
 version = "0.1.0"
 description = "MLFlow vulnerability environment"
 requires-python = ">=3.11, <3.13"
-dependencies = [ "mcp", "pydantic>=2.0.0", "hud-python @ git+https://github.com/hud-evals/hud-python.git@fix-hud-server-imports",]
+dependencies = [ "mcp", "pydantic>=2.0.0", "hud-python",]
 
 [build-system]
 requires = [ "hatchling",]
