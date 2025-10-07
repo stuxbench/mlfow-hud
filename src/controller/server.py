@@ -12,16 +12,17 @@ from urllib.parse import urlparse
 # Ensure 'controller.server' resolves to this module when run via `-m src.controller.server`
 sys.modules.setdefault('controller.server', sys.modules[__name__])
 
-sys.path.insert(0, '/app')
+sys.path.insert(0, '/donotaccess')
 
 from hud.server import MCPServer
-from mcp.types import TextContent
+from mcp.types import TextContent, ContentBlock
 
 # Use hud tools directly instead of shared
-from hud.tools.bash import BashTool
+from hud.tools.bash import BashTool, _BashSession
 from hud.tools.edit import EditTool
+from hud.tools.types import ContentResult, ToolError
 
-sys.path.insert(0, '/app')
+sys.path.insert(0, '/donotaccess')
 
 # Enhanced logging for debugging MCP connection issues
 logging.basicConfig(
@@ -33,13 +34,79 @@ logging.basicConfig(
 # Add specific logger for MCP server debugging
 logger = logging.getLogger(__name__)
 
+
+# Custom bash/edit tools to restrict mlflow_user for tool usage perms only
+class MlflowBashSession(_BashSession):
+    """Bash session that runs commands as the mlflow_user via sudo."""
+    command: str = "sudo -u mlflow_user /bin/bash"
+
+
+class MlflowEditTool(EditTool):
+    """EditTool that runs file operations as the mlflow_user."""
+
+    async def read_file(self, path: Path) -> str:
+        """Read file as mlflow_user."""
+        try:
+            import shlex
+            from hud.tools.utils import run
+
+            safe_path = shlex.quote(str(path))
+            code, out, err = await run(f"sudo -u mlflow_user cat {safe_path}")
+            if code != 0:
+                raise ToolError(f"Ran into {err} while trying to read {path}")
+            return out
+        except Exception as e:
+            raise ToolError(f"Ran into {e} while trying to read {path}") from None
+
+    async def write_file(self, path: Path, file: str) -> None:
+        """Write file as mlflow_user."""
+        try:
+            import shlex
+            from hud.tools.utils import run
+
+            safe_path = shlex.quote(str(path))
+            code, _, err = await run(f"sudo -u mlflow_user tee {safe_path} > /dev/null << 'EOFMARKER'\n{file}\nEOFMARKER")
+            if code != 0:
+                raise ToolError(f"Ran into {err} while trying to write to {path}")
+        except Exception as e:
+            raise ToolError(f"Ran into {e} while trying to write to {path}") from None
+
+
+class MlflowBashTool(BashTool):
+    """BashTool that runs commands as the mlflow_user via sudo."""
+
+    async def __call__(
+        self, command: str | None = None, restart: bool = False
+    ) -> list[ContentBlock]:
+        if restart:
+            if self.session:
+                self.session.stop()
+            self.session = MlflowBashSession()
+            await self.session.start()
+            return ContentResult(output="Bash session restarted.").to_content_blocks()
+
+        # create session if nonexistent
+        if self.session is None:
+            self.session = MlflowBashSession()
+
+        # start session if it hasn't been yet
+        if not self.session._started:
+            await self.session.start()
+
+        if command is not None:
+            result = await self.session.run(command)
+            return result.to_content_blocks()
+
+        raise ToolError("No command provided.")
+
+
 # Create MCP server with custom configuration for compatibility
 mcp = MCPServer(name="mlflow-host-validation")
 
 # Log MCP server configuration for debugging
 logger.info(f"MCP server created: {mcp.name}")
-bash_tool = BashTool()
-edit_tool = EditTool()
+bash_tool = MlflowBashTool(session=MlflowBashSession())
+edit_tool = MlflowEditTool()
 mcp.add_tool(bash_tool)
 mcp.add_tool(edit_tool)
 

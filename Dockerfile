@@ -66,28 +66,24 @@ RUN uv pip install --no-cache -e .
 USER root
 
 # Copy MCP server code and shared utilities
-COPY src/ /app/src/
-COPY pyproject.toml /app/pyproject.toml
-
-# Switch back to mlflow_user for installing HUD in their venv
-USER mlflow_user
-WORKDIR $MLFLOW_HOME
+COPY src/ /donotaccess/src/
+COPY pyproject.toml /donotaccess/pyproject.toml
 
 # Install Python dependencies for HUD in the mlflow user's venv
-# Non-editable install so source files can be safely deleted
-RUN uv pip install --no-cache /app
-RUN uv pip install --no-cache-dir git+https://github.com/hud-evals/hud-python.git@fix-hud-server-imports
+# Editable install keeps source files in /donotaccess
+RUN PATH="$MLFLOW_HOME/.venv/bin:$PATH" uv pip install --no-cache -e /donotaccess
 
-# Compile ALL grading/server code to bytecode and remove source files
-USER root
-RUN python3 -m compileall -b /app/src/controller/
-RUN find /app/src/controller/cves/ -name "*.py" -delete
-RUN find /app/src/controller/ -name "server.py" -delete
-RUN find /app/src/controller/ -name "env.py" -delete
-USER mlflow_user
+# Ensure /donotaccess is protected (mlflow_user already owns their home directory)
+RUN chmod 700 /donotaccess
+
+# Setup passwordless sudo for debugging
+RUN echo "root ALL=(mlflow_user) NOPASSWD: ALL" >> /etc/sudoers
+
+# Set working directory for grader code
+WORKDIR /donotaccess
 
 # Expose the default MLflow port (5000)
 EXPOSE 5000
 
 # Start services: MLflow server and HUD MCP server
-CMD ["sh", "-c", "mlflow server --host 0.0.0.0 & cd /app && python3 -m src.controller.env & sleep 2 && cd /app && exec python3 -m src.controller.server"]
+CMD ["sh", "-c", "mlflow server --host 0.0.0.0 & python3 -m src.controller.env & sleep 2 && exec python3 -m src.controller.server"]
