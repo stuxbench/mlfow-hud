@@ -62,6 +62,11 @@ RUN uv pip install --no-cache .
 # 3. Install the mlflow project itself in editable mode.
 RUN uv pip install --no-cache -e .
 
+# 4. Install test dependencies for unit testing
+RUN uv pip install --no-cache -r requirements/test-requirements.txt && \
+    uv pip install --no-cache -e '.[extras]' && \
+    uv pip install --no-cache -e tests/resources/mlflow-test-plugin
+
 # Switch back to root for copying HUD files
 USER root
 
