@@ -311,6 +311,119 @@ def launch_mlflow_service_mcp():
     """
     return evaluate_cve_2025_99999()
 
+@mcp.tool(name="run_unit_tests")
+def run_unit_tests():
+    """
+    Run MLflow unit tests in three stages to work around pytest limitations.
+
+    This tool executes the full test suite in three separate pytest invocations:
+    1. Main test suite (excluding problematic tests)
+    2. metrics/genai/test_base.py (requires separate run)
+    3. tracking/_model_registry/test_utils.py (requires separate run)
+
+    Returns:
+        Metadata with test results from each stage, including pass/fail counts,
+        timing information, and any error output.
+    """
+    metadata = {
+        "cwd": MLFLOW_DIR,
+        "stages": [],
+        "overall_success": False
+    }
+
+    test_stages = [
+        {
+            "name": "main_test_suite",
+            "command": [
+                "pytest", "tests", "--quiet", "--requires-ssh",
+                "--ignore-flavors", "--serve-wheel",
+                "--ignore=tests/examples",
+                "--ignore=tests/evaluate",
+                "--ignore=tests/gateway",
+                "--ignore=tests/sagemaker",
+                "--ignore=tests/pyfunc/docker",
+                "--ignore=tests/data/test_tensorflow_dataset.py",
+                "--ignore=tests/metrics/genai/test_base.py",
+                "--ignore=tests/tracking/_model_registry/test_utils.py"
+            ],
+            "timeout": 1800  # 30 minutes
+        },
+        {
+            "name": "genai_base_tests",
+            "command": [
+                "pytest", "tests/metrics/genai/test_base.py",
+                "--quiet", "--requires-ssh"
+            ],
+            "timeout": 300  # 5 minutes
+        },
+        {
+            "name": "model_registry_tests",
+            "command": [
+                "pytest", "tests/tracking/_model_registry/test_utils.py",
+                "--quiet", "--requires-ssh"
+            ],
+            "timeout": 300  # 5 minutes
+        }
+    ]
+
+    env = {
+        **os.environ,
+        'PATH': '/home/mlflow_user/mlflow/.venv/bin:' + os.environ.get('PATH', '')
+    }
+
+    all_passed = True
+
+    for stage in test_stages:
+        stage_result = {
+            "name": stage["name"],
+            "command": " ".join(stage["command"])
+        }
+
+        try:
+            result = subprocess.run(
+                stage["command"],
+                cwd=MLFLOW_DIR,
+                capture_output=True,
+                text=True,
+                timeout=stage["timeout"],
+                env=env
+            )
+
+            stage_result["returncode"] = result.returncode
+            stage_result["stdout"] = result.stdout
+            stage_result["stderr"] = result.stderr
+            stage_result["success"] = result.returncode == 0
+
+            if result.returncode != 0:
+                all_passed = False
+
+        except subprocess.TimeoutExpired as e:
+            stage_result["error"] = f"Timeout after {stage['timeout']} seconds"
+            stage_result["success"] = False
+            stage_result["stdout"] = e.stdout.decode() if e.stdout else ""
+            stage_result["stderr"] = e.stderr.decode() if e.stderr else ""
+            all_passed = False
+
+        except Exception as e:
+            stage_result["error"] = str(e)
+            stage_result["success"] = False
+            all_passed = False
+
+        metadata["stages"].append(stage_result)
+
+    metadata["overall_success"] = all_passed
+
+    # Build summary message
+    passed_count = sum(1 for s in metadata["stages"] if s.get("success", False))
+    total_count = len(metadata["stages"])
+
+    if all_passed:
+        metadata["summary"] = f"All {total_count} test stages passed successfully"
+    else:
+        metadata["summary"] = f"{passed_count}/{total_count} test stages passed"
+
+    return metadata
+
 @mcp.tool(name="checkout_branch")
 def checkout_branch(branch: str):
     """
