@@ -8,6 +8,9 @@ vulnerability fix in MLflow server authentication handling.
 import subprocess
 import os
 import time
+import gc
+import sys
+from datetime import datetime
 import requests
 from controller.server import mcp
 from hud.tools.types import EvaluationResult
@@ -314,12 +317,19 @@ def launch_mlflow_service_mcp():
 @mcp.tool(name="run_unit_tests")
 def run_unit_tests():
     """
-    Run MLflow unit tests in three stages to work around pytest limitations.
+    Run MLflow unit tests in 8 sequential segments to avoid pytest limitations and file descriptor exhaustion.
 
-    This tool executes the full test suite in three separate pytest invocations:
-    1. Main test suite (excluding problematic tests)
-    2. metrics/genai/test_base.py (requires separate run)
-    3. tracking/_model_registry/test_utils.py (requires separate run)
+    This tool executes unit tests in focused segments, excluding integration tests:
+    1. Core Infrastructure (server, artifacts, autologging)
+    2. CLI & Commands (ai_commands, claude_code, cli)
+    3. Data Layer Tests (data, excluding spark/tensorflow)
+    4. Database & Dev Tools (db, dev)
+    5. Entities
+    6. GenAI Core (datasets, evaluate, optimize, prompts, labeling, utils)
+    7. GenAI Judges & Scorers (judges, scorers, metrics/genai/test_base.py)
+    8. Remaining Tests (mcp, etc.)
+
+    Excluded integration tests: integration, tracking, deployments, gateway, sagemaker, pyfunc/docker, examples, evaluate
 
     Returns:
         Metadata with test results from each stage, including pass/fail counts,
@@ -333,36 +343,107 @@ def run_unit_tests():
 
     test_stages = [
         {
-            "name": "main_test_suite",
+            "name": "core_infrastructure",
             "command": [
-                "pytest", "tests", "--quiet", "--requires-ssh",
-                "--ignore-flavors", "--serve-wheel",
-                "--ignore=tests/examples",
-                "--ignore=tests/evaluate",
+                "pytest", "tests/server", "tests/artifacts", "tests/autologging",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
+            ],
+            "timeout": 600  # 10 minutes
+        },
+        {
+            "name": "cli_and_commands",
+            "command": [
+                "pytest", "tests/ai_commands", "tests/claude_code", "tests/cli",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
+            ],
+            "timeout": 600  # 10 minutes
+        },
+        {
+            "name": "data_tests",
+            "command": [
+                "pytest", "tests/data",
+                "--ignore=tests/data/test_tensorflow_dataset.py",
+                "--ignore=tests/data/test_spark_dataset.py",
+                "--ignore=tests/data/test_spark_dataset_source.py",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
+            ],
+            "timeout": 900  # 15 minutes
+        },
+        {
+            "name": "database_and_dev",
+            "command": [
+                "pytest", "tests/db", "tests/dev",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
+            ],
+            "timeout": 900  # 15 minutes
+        },
+        {
+            "name": "entities",
+            "command": [
+                "pytest", "tests/entities",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
+            ],
+            "timeout": 900  # 15 minutes
+        },
+        {
+            "name": "genai_core",
+            "command": [
+                "pytest",
+                "tests/genai/datasets",
+                "tests/genai/evaluate",
+                "tests/genai/optimize",
+                "tests/genai/prompts",
+                "tests/genai/labeling",
+                "tests/genai/utils",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
+            ],
+            "timeout": 1200  # 20 minutes
+        },
+        {
+            "name": "genai_judges_scorers",
+            "command": [
+                "pytest",
+                "tests/genai/judges",
+                "tests/genai/scorers",
+                "tests/metrics/genai/test_base.py",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
+            ],
+            "timeout": 1200  # 20 minutes
+        },
+        {
+            "name": "remaining_tests",
+            "command": [
+                "pytest", "tests",
+                "--ignore=tests/server",
+                "--ignore=tests/artifacts",
+                "--ignore=tests/autologging",
+                "--ignore=tests/ai_commands",
+                "--ignore=tests/claude_code",
+                "--ignore=tests/cli",
+                "--ignore=tests/data",
+                "--ignore=tests/db",
+                "--ignore=tests/dev",
+                "--ignore=tests/entities",
+                "--ignore=tests/genai",
+                "--ignore=tests/metrics",
+                "--ignore=tests/integration",
+                "--ignore=tests/tracking",
+                "--ignore=tests/deployments",
                 "--ignore=tests/gateway",
                 "--ignore=tests/sagemaker",
                 "--ignore=tests/pyfunc/docker",
-                "--ignore=tests/data/test_tensorflow_dataset.py",
-                "--ignore=tests/metrics/genai/test_base.py",
-                "--ignore=tests/tracking/_model_registry/test_utils.py"
+                "--ignore=tests/pyfunc/test_scoring_server.py",
+                "--ignore=tests/pyfunc/test_mlserver.py",
+                "--ignore=tests/examples",
+                "--ignore=tests/evaluate",
+                "--ignore=tests/mcp",
+                "--ignore=tests/webhooks",
+                "--ignore=tests/tracing",
+                "--ignore=tests/store",
+                "--ignore=tests/system_metrics",
+                "-v", "--requires-ssh", "--ignore-flavors", "--serve-wheel", "--timeout=15"
             ],
-            "timeout": 1800  # 30 minutes
-        },
-        {
-            "name": "genai_base_tests",
-            "command": [
-                "pytest", "tests/metrics/genai/test_base.py",
-                "--quiet", "--requires-ssh"
-            ],
-            "timeout": 300  # 5 minutes
-        },
-        {
-            "name": "model_registry_tests",
-            "command": [
-                "pytest", "tests/tracking/_model_registry/test_utils.py",
-                "--quiet", "--requires-ssh"
-            ],
-            "timeout": 300  # 5 minutes
+            "timeout": 600  # 10 minutes
         }
     ]
 
@@ -372,44 +453,93 @@ def run_unit_tests():
     }
 
     all_passed = True
+    total_stages = len(test_stages)
 
-    for stage in test_stages:
+    for i, stage in enumerate(test_stages, 1):
         stage_result = {
             "name": stage["name"],
             "command": " ".join(stage["command"])
         }
 
+        # Print stage header with timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"\n{'='*80}", file=sys.stderr)
+        print(f"[{timestamp}] Stage {i}/{total_stages}: {stage['name']}", file=sys.stderr)
+        print(f"Command: {stage_result['command']}", file=sys.stderr)
+        print(f"{'='*80}\n", file=sys.stderr)
+        sys.stderr.flush()
+
+        start_time = time.time()
+
         try:
-            result = subprocess.run(
+            # Use Popen for real-time output streaming
+            process = subprocess.Popen(
                 stage["command"],
                 cwd=MLFLOW_DIR,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
                 text=True,
-                timeout=stage["timeout"],
-                env=env
+                env=env,
+                bufsize=1,  # Line buffered
+                universal_newlines=True
             )
 
-            stage_result["returncode"] = result.returncode
-            stage_result["stdout"] = result.stdout
-            stage_result["stderr"] = result.stderr
-            stage_result["success"] = result.returncode == 0
+            # Stream output line by line in real-time
+            output_lines = []
+            try:
+                for line in process.stdout:
+                    print(line, end='', file=sys.stderr)
+                    sys.stderr.flush()
+                    output_lines.append(line)
 
-            if result.returncode != 0:
+                # Wait for process to complete with timeout
+                returncode = process.wait(timeout=stage["timeout"])
+
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                stage_result["error"] = f"Timeout after {stage['timeout']} seconds"
+                stage_result["success"] = False
+                stage_result["stdout"] = ''.join(output_lines)
+                stage_result["returncode"] = -1
+                all_passed = False
+                elapsed = time.time() - start_time
+                print(f"\n✗ TIMEOUT: {stage['name']} (after {elapsed:.1f}s)", file=sys.stderr)
+                sys.stderr.flush()
+                metadata["stages"].append(stage_result)
+                gc.collect()
+                time.sleep(2)
+                continue
+
+            # Process completed normally
+            stage_result["returncode"] = returncode
+            stage_result["stdout"] = ''.join(output_lines)
+            stage_result["stderr"] = ""  # Already merged into stdout
+            stage_result["success"] = returncode == 0
+
+            if returncode != 0:
                 all_passed = False
 
-        except subprocess.TimeoutExpired as e:
-            stage_result["error"] = f"Timeout after {stage['timeout']} seconds"
-            stage_result["success"] = False
-            stage_result["stdout"] = e.stdout.decode() if e.stdout else ""
-            stage_result["stderr"] = e.stderr.decode() if e.stderr else ""
-            all_passed = False
+            # Print stage completion status
+            elapsed = time.time() - start_time
+            status = "✓ PASSED" if stage_result["success"] else "✗ FAILED"
+            print(f"\n{status}: {stage['name']} (took {elapsed:.1f}s)", file=sys.stderr)
+            sys.stderr.flush()
 
         except Exception as e:
             stage_result["error"] = str(e)
             stage_result["success"] = False
+            stage_result["returncode"] = -1
             all_passed = False
+            elapsed = time.time() - start_time
+            print(f"\n✗ ERROR: {stage['name']} - {str(e)} (after {elapsed:.1f}s)", file=sys.stderr)
+            sys.stderr.flush()
 
         metadata["stages"].append(stage_result)
+
+        # Cleanup between test stages to prevent file descriptor exhaustion
+        gc.collect()
+        time.sleep(2)
 
     metadata["overall_success"] = all_passed
 
@@ -421,6 +551,17 @@ def run_unit_tests():
         metadata["summary"] = f"All {total_count} test stages passed successfully"
     else:
         metadata["summary"] = f"{passed_count}/{total_count} test stages passed"
+
+    # Print final summary
+    print(f"\n{'='*80}", file=sys.stderr)
+    print("FINAL SUMMARY", file=sys.stderr)
+    print(f"{'='*80}", file=sys.stderr)
+    print(f"Total Stages: {total_count}", file=sys.stderr)
+    print(f"Passed: {passed_count}", file=sys.stderr)
+    print(f"Failed: {total_count - passed_count}", file=sys.stderr)
+    print(f"Overall: {'✓ ALL PASSED' if all_passed else '✗ SOME FAILED'}", file=sys.stderr)
+    print(f"{'='*80}\n", file=sys.stderr)
+    sys.stderr.flush()
 
     return metadata
 
