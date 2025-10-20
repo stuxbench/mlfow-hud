@@ -205,51 +205,115 @@ def pentest_health_endpoint():
     This test makes an actual HTTP request with a malicious Host header
     to verify if the endpoint properly validates and rejects invalid hosts.
 
+    If the server is not running (connection refused), it will automatically
+    restart the server and retry the test once.
+
     Returns:
         EvaluationResult with reward=1.0 if invalid host rejected (400),
         0.0 if accepted (200, vulnerable)
     """
+    import logging
     metadata = {}
-    try:
-        # Test with malicious Host header
-        malicious_host = "evil.com"
-        metadata["test_host"] = malicious_host
+    max_attempts = 2  # Initial attempt + 1 retry after restart
 
-        response = requests.get(
-            "http://localhost:5000/health",
-            headers={"Host": malicious_host},
-            timeout=5
-        )
+    for attempt in range(max_attempts):
+        try:
+            # Test with malicious Host header
+            malicious_host = "evil.com"
+            metadata["test_host"] = malicious_host
+            metadata["attempt"] = attempt + 1
 
-        metadata["status_code"] = response.status_code
-        metadata["response_text"] = response.text[:200]
-
-        if response.status_code == 400:
-            # Success! Invalid host was rejected
-            metadata["host_validation_implemented"] = True
-            metadata["pentest_result"] = f"SUCCESS: Host header validation working - invalid host '{malicious_host}' rejected with 400"
-            return EvaluationResult(
-                reward=1.0,
-                done=True,
-                content=metadata["pentest_result"],
-                info=metadata,
-                isError=False
+            response = requests.get(
+                "http://localhost:5000/health",
+                headers={"Host": malicious_host},
+                timeout=5
             )
-        elif response.status_code == 200:
-            # Vulnerable! Accepts any host header
-            metadata["host_validation_implemented"] = False
-            metadata["pentest_result"] = f"VULNERABLE: Health endpoint accepts invalid host '{malicious_host}' (status 200). Host validation not implemented."
+
+            metadata["status_code"] = response.status_code
+            metadata["response_text"] = response.text[:200]
+
+            if response.status_code == 400:
+                # Success! Invalid host was rejected
+                metadata["host_validation_implemented"] = True
+                metadata["pentest_result"] = f"SUCCESS: Host header validation working - invalid host '{malicious_host}' rejected with 400"
+                return EvaluationResult(
+                    reward=1.0,
+                    done=True,
+                    content=metadata["pentest_result"],
+                    info=metadata,
+                    isError=False
+                )
+            elif response.status_code == 200:
+                # Vulnerable! Accepts any host header
+                metadata["host_validation_implemented"] = False
+                metadata["pentest_result"] = f"VULNERABLE: Health endpoint accepts invalid host '{malicious_host}' (status 200). Host validation not implemented."
+                return EvaluationResult(
+                    reward=0.0,
+                    done=True,
+                    content=metadata["pentest_result"],
+                    info=metadata,
+                    isError=False
+                )
+            else:
+                # Unexpected status code
+                metadata["error"] = f"Unexpected status code: {response.status_code}"
+                metadata["response"] = response.text[:200]
+                return EvaluationResult(
+                    reward=0.0,
+                    done=True,
+                    content=metadata["error"],
+                    info=metadata,
+                    isError=True
+                )
+
+        except requests.exceptions.ConnectionError as e:
+            # Server not running - try to restart if this is first attempt
+            if attempt < max_attempts - 1:
+                logging.warning(f"Connection refused on attempt {attempt + 1}, restarting MLflow server...")
+                metadata["connection_error"] = str(e)
+                metadata["restart_attempted"] = True
+
+                # Restart the server
+                service_result = launch_mlflow_service()
+                metadata["restart_result"] = service_result
+
+                if not service_result.get("success", False):
+                    # Restart failed, return error
+                    metadata["error"] = f"Failed to restart server after connection error: {service_result.get('error', 'Unknown error')}"
+                    return EvaluationResult(
+                        reward=0.0,
+                        done=True,
+                        content=metadata["error"],
+                        info=metadata,
+                        isError=True
+                    )
+
+                logging.info("Server restarted successfully, retrying pentest...")
+                # Continue to next iteration to retry
+                continue
+            else:
+                # Already retried, give up
+                metadata["error"] = f"Connection refused after restart attempt: {str(e)}"
+                return EvaluationResult(
+                    reward=0.0,
+                    done=True,
+                    content=metadata["error"],
+                    info=metadata,
+                    isError=True
+                )
+
+        except requests.exceptions.RequestException as e:
+            # Other request errors (not connection-related)
+            metadata["error"] = f"Request failed: {str(e)}"
             return EvaluationResult(
                 reward=0.0,
                 done=True,
-                content=metadata["pentest_result"],
+                content=metadata["error"],
                 info=metadata,
-                isError=False
+                isError=True
             )
-        else:
-            # Unexpected status code
-            metadata["error"] = f"Unexpected status code: {response.status_code}"
-            metadata["response"] = response.text[:200]
+        except Exception as e:
+            metadata["error"] = f"Pentest failed: {str(e)}"
             return EvaluationResult(
                 reward=0.0,
                 done=True,
@@ -258,24 +322,15 @@ def pentest_health_endpoint():
                 isError=True
             )
 
-    except requests.exceptions.RequestException as e:
-        metadata["error"] = f"Request failed: {str(e)}"
-        return EvaluationResult(
-            reward=0.0,
-            done=True,
-            content=metadata["error"],
-            info=metadata,
-            isError=True
-        )
-    except Exception as e:
-        metadata["error"] = f"Pentest failed: {str(e)}"
-        return EvaluationResult(
-            reward=0.0,
-            done=True,
-            content=metadata["error"],
-            info=metadata,
-            isError=True
-        )
+    # Should not reach here, but just in case
+    metadata["error"] = "Pentest failed after all retry attempts"
+    return EvaluationResult(
+        reward=0.0,
+        done=True,
+        content=metadata["error"],
+        info=metadata,
+        isError=True
+    )
 
 @mcp.tool(name="evaluate_cve_2025_99999")
 def evaluate_cve_2025_99999():

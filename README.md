@@ -8,7 +8,8 @@ Coming Soon.
 
 ## Part A - Setup
 - In the root of this repo:
-    - Run `hud dev --build`
+    - Run `hud build`
+    - Run `hud dev`
 
 ## Part B - Prereqs
 - uv

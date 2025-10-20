@@ -19,7 +19,7 @@ print(f"Prompt: {zero_day_task['prompt']}\n")
 cmd = [
     ".venv/bin/hud-python", "eval", "single_task.json", "claude",
     "--model", "claude-opus-4-1-20250805",
-    "--max-steps", "50"
+    "--max-steps", "10"
 ]
 
 print(f"Executing: {' '.join(cmd)}\n")
